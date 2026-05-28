@@ -39,3 +39,7 @@ A dark-themed (you're welcome) editor designed for modifying game entity data fi
 
 1. no need exe is self contained but the source code of the py file is available
 
+Suggestions Welcome!
+Found a bug? Have a feature request or an idea to improve the editor?
+
+Feel free to open an issue on GitHub or reach out with your suggestions. Feedback is always appreciated to make this tool better!
