@@ -439,8 +439,8 @@ class EntityEditor:
         
         self.update_random_mod_description()
 
-        # --- Bulk Edit & Row Management ---
-        bulk_edit_frame = tk.LabelFrame(right_panel, text="Bulk Edit & Rows", 
+        # --- Bulk Edit & Math & Row Management ---
+        bulk_edit_frame = tk.LabelFrame(right_panel, text="Bulk Edit, Math & Rows", 
                                         bg=self.frame_bg, fg=self.fg_color, 
                                         borderwidth=0, relief=tk.FLAT, padx=5, pady=5)
         bulk_edit_frame.pack(fill=tk.X, pady=5)
@@ -462,6 +462,25 @@ class EntityEditor:
 
         ttk.Button(bulk_inner, text="Apply", command=self.apply_bulk_edit).pack(side=tk.LEFT, padx=5)
 
+        # Math Editor
+        math_inner = tk.Frame(bulk_edit_frame, bg=self.frame_bg, borderwidth=0)
+        math_inner.pack(fill=tk.X, pady=5, padx=5)
+
+        ttk.Label(math_inner, text="Column:").pack(side=tk.LEFT, padx=5)
+        self.math_column = ttk.Combobox(math_inner, width=12, state="readonly")
+        self.math_column.pack(side=tk.LEFT, padx=5)
+
+        ttk.Label(math_inner, text="Operation:").pack(side=tk.LEFT, padx=5)
+        self.math_operation = ttk.Combobox(math_inner, values=["Add (+)", "Subtract (-)", "Multiply (*)", "Divide (/)"], width=12, state="readonly")
+        self.math_operation.pack(side=tk.LEFT, padx=5)
+        self.math_operation.set("Add (+)")
+
+        ttk.Label(math_inner, text="Value:").pack(side=tk.LEFT, padx=5)
+        self.math_value = ttk.Entry(math_inner, width=10)
+        self.math_value.pack(side=tk.LEFT, padx=5)
+
+        ttk.Button(math_inner, text="Apply Math", command=self.apply_math).pack(side=tk.LEFT, padx=5)
+
         # Row Management
         row_btns = tk.Frame(bulk_edit_frame, bg=self.frame_bg, borderwidth=0)
         row_btns.pack(fill=tk.X, pady=5, padx=5)
@@ -471,7 +490,7 @@ class EntityEditor:
         
         ttk.Button(row_btns, text="Undo Paste", command=self.undo_paste).pack(side=tk.LEFT, padx=10)
         
-        ttk.Label(row_btns, text="Tip: Pasting more than what is selected will overwrite what is then add to the bottom, to paste without overwriting add row then select empty row", 
+        ttk.Label(row_btns, text="Tip: Pasting >1 row adds to bottom", 
                   foreground=self.desc_grey, wraplength=250).pack(side=tk.LEFT, padx=10)
 
     # Tree View (Main Table)
@@ -572,8 +591,21 @@ class EntityEditor:
         self.tree['columns'] = self.headers
         self.tree.column("#0", width=0, stretch=tk.NO)
 
+        # Calculate appropriate widths for each column
         for header in self.headers:
-            self.tree.column(header, anchor=tk.W, width=100)
+            # Start with header width (minimum)
+            final_width = (len(header) * 10) + 20
+            
+            # Check data content
+            for row in data:
+                value = str(row.get(header, ""))
+                value_width = (len(value) * 8) + 10
+                final_width = max(final_width, value_width)
+            
+            # Cap at 400 pixels
+            final_width = min(final_width, 400)
+            
+            self.tree.column(header, anchor=tk.W, width=final_width, minwidth=final_width)
             self.tree.heading(header, text=header)
 
         for idx, row in enumerate(data):
@@ -588,6 +620,7 @@ class EntityEditor:
             self.filter3_column['values'] = values
             self.filter4_column['values'] = values
             self.bulk_column['values'] = values
+            self.math_column['values'] = values
 
     def update_status(self, message):
         self.status_label.config(text=message)
@@ -1156,13 +1189,82 @@ class EntityEditor:
         try:
             row_index = int(selected_item_id)
             entity = self.filtered_data[row_index]
-            selected_key = self.tree.get(selected_item_id, "values", 0)
-            self.update_status(f"Selected: {selected_key}. Data ready for actions.")
+            selected_key = self.tree.get(selected_item_id, "values")
+            self.update_status("Selected: {selected_key}. Data ready for actions.")
 
         except IndexError:
             self.update_status("Error: Could not find data for the selected row index.")
         except Exception as e:
-            self.update_status(f"An error occurred during selection change: {e}")
+            self.update_status("An error occurred during selection change: {e}")
+    # -------------------------------------------------------------------------
+    # MATH EDITING
+    # -------------------------------------------------------------------------
+    def apply_math(self):
+        """Applies math operations to the selected column."""
+        col = self.math_column.get()
+        op = self.math_operation.get()
+        val_str = self.math_value.get()
+
+        if not col:
+            messagebox.showwarning("Warning", "Please select a column")
+            return
+        if not val_str:
+            messagebox.showwarning("Warning", "Please enter a value")
+            return
+
+        try:
+            value = float(val_str)
+        except ValueError:
+            messagebox.showwarning("Warning", "Please enter a valid number")
+            return
+
+        # Determine if input is an integer
+        input_is_int = (value == int(value))
+
+        # Get target data
+        target_data = self.filtered_data if self.bulk_filtered_only.get() else self.data
+        
+        count = 0
+        errors = 0
+        
+        for row in target_data:
+            try:
+                current_val_str = row.get(col, "0")
+                current_val = float(current_val_str)
+                
+                if "Add" in op:
+                    new_val = current_val + value
+                elif "Subtract" in op:
+                    new_val = current_val - value
+                elif "Multiply" in op:
+                    new_val = current_val * value
+                elif "Divide" in op:
+                    if value == 0:
+                        continue
+                    new_val = current_val / value
+                else:
+                    continue
+                
+                # Check if result should be integer
+                # If input is integer AND current value was integer-like AND result is whole number
+                original_was_int = (current_val == int(current_val))
+                
+                if input_is_int and original_was_int and (new_val == int(new_val)):
+                    new_val = int(new_val)
+                
+                row[col] = new_val
+                count += 1
+            except (ValueError, TypeError, ZeroDivisionError):
+                errors += 1
+
+        self.modified = True
+        self.update_tree()
+        
+        if errors > 0:
+            self.update_status(f"Math applied to {count} rows ({errors} errors)")
+        else:
+            self.update_status(f"Math applied to {count} rows")
+
 
     # -------------------------------------------------------------------------
     # WINDOW MANAGEMENT
@@ -1189,3 +1291,4 @@ if __name__ == "__main__":
     root = tk.Tk()
     app = EntityEditor(root)
     root.mainloop()
+
